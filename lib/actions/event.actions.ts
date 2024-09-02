@@ -1,6 +1,7 @@
 'use server'
 
 import { revalidatePath } from 'next/cache'
+import mongoose from 'mongoose'
 
 import { connectToDatabase } from '@/lib/database'
 import Event from '@/lib/database/models/event.model'
@@ -30,17 +31,32 @@ const populateEvent = (query: any) => {
 // CREATE
 export async function createEvent({ userId, event, path }: CreateEventParams) {
   try {
-    await connectToDatabase()
+    await connectToDatabase();
 
-    const organizer = await User.findById(userId)
-    if (!organizer) throw new Error('Organizer not found')
+    // Convert userId to ObjectId if necessary
+    let objectId;
+    try {
+      objectId = new mongoose.Types.ObjectId(userId);
+    } catch (error) {
+      console.error("Invalid userId format:", userId);
+      throw new Error('Invalid userId format');
+    }
 
-    const newEvent = await Event.create({ ...event, category: event.categoryId, organizer: userId })
-    revalidatePath(path)
+    // Find the organizer by ObjectId
+    const organizer = await User.findById(objectId);
+    if (!organizer) {
+      console.error("Organizer not found with ID:", objectId);
+      throw new Error('Organizer not found');
+    }
 
-    return JSON.parse(JSON.stringify(newEvent))
+    // Create the event
+    const newEvent = await Event.create({ ...event, category: event.categoryId, organizer: objectId });
+    revalidatePath(path);
+
+    return JSON.parse(JSON.stringify(newEvent));
   } catch (error) {
-    handleError(error)
+    console.error("Error in createEvent:", error);
+    handleError(error);
   }
 }
 
@@ -64,22 +80,22 @@ export async function updateEvent({ userId, event, path }: UpdateEventParams) {
   try {
     await connectToDatabase()
 
-    const eventToUpdate = await Event.findById(event._id)
-    if (!eventToUpdate || eventToUpdate.organizer.toHexString() !== userId) {
-      throw new Error('Unauthorized or event not found')
+    const eventToUpdate = await Event.findById(event._id);
+    if (!eventToUpdate || eventToUpdate.organizer !== userId) {
+      throw new Error('Unauthorized or event not found');
     }
-
+    
     const updatedEvent = await Event.findByIdAndUpdate(
       event._id,
       { ...event, category: event.categoryId },
       { new: true }
-    )
-    revalidatePath(path)
-
-    return JSON.parse(JSON.stringify(updatedEvent))
-  } catch (error) {
-    handleError(error)
-  }
+    );
+    revalidatePath(path);
+    
+    return JSON.parse(JSON.stringify(updatedEvent));
+    } catch (error) {
+      handleError(error);
+    }
 }
 
 // DELETE
